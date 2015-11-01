@@ -1,0 +1,23 @@
+{
+  "name": "tbp",
+  "description": "Tools for batch operations on torrents",
+  "keywords": [
+    "torrent",
+    "bittorremt",
+	"batch",
+	"processor"
+  ],
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/guiweber/torrent-batch-processor"
+  },
+  "homepage": "https://github.com/guiweber/torrent-batch-processor",
+  "bugs": { "url": "https://github.com/guiweber/torrent-batch-processor/issues"},
+  "main": "./lib/index.js",
+  "dependencies": {
+    "async": "^1.5.0",
+	"nt": "^0.5.1"
+  },
+  "license": "GPL-3.0"
+}
