@@ -12,16 +12,16 @@ updates the onscreen status
 function status(title, progress){
 	progress = progress || '';
 	/*if (process.platform == 'win32'){
-		process.stdout.write('\x1Bc'); 
+		process.stdout.write('\x1Bc');
 	}else{
 		process.stdout.write('\x1B[2J'); //needs testing on linux
 	}
 	console.log(title);*/
 	console.log(progress);
-	
+
 }
 
-/* 
+/*
 This class recursively scans all directory under the provided path and reads the torrent files it finds
 
 Events:
@@ -30,7 +30,7 @@ Events:
  */
 
 class BatchProcessor{
-	
+
 	constructor(){
 		EventEmitter.call(this);
 		var caller = this;
@@ -41,18 +41,18 @@ class BatchProcessor{
 		this.torrents = [];
 		this.directories = [];
 	}
-	
+
 	actionReadTorrents(path){
 		path = this.cleanPath(path);
 		this.readScan(path);
 	}
-	
+
 	actionMatch(path, torrents){
 		var caller = this;
 		path = this.cleanPath(path);
 		this.getDirectories(path, function(){caller.startMatchScan(path, torrents);});
 	}
-	
+
 	actionMkDir(root, torrents){
 		root = this.cleanPath(root);
 		torrents = this.getArray(torrents);
@@ -64,7 +64,7 @@ class BatchProcessor{
 			}
 		});
 	}
-	
+
 	//returns a list of all directories under and including the provided path
 	getDirectories(path, callback){
 		this.scanningDir++;
@@ -90,7 +90,7 @@ class BatchProcessor{
 			});
 		});
 	}
-	
+
 	//puts data into an array if it isn't one already
 	getArray(data){
 		var array = []
@@ -101,20 +101,20 @@ class BatchProcessor{
 		}
 		return array;
 	}
-	
+
 	//initializes the scan process for each torrent
 	startMatchScan(path, torrents){
 		var caller = this;
-		torrents.forEach(function(torrent){
+		async.eachLimit(torrents, 16, function(torrent, callback){ //16 concurrent scans gives the best performance on my pc
 			caller.scanningMatch ++;
 			torrent.match = '';
 			var torrentFiles = caller.getTorrentFiles(torrent);
-			caller.matchScan(path, torrent, torrentFiles, 0);
+			caller.matchScan(path, torrent, torrentFiles, 0, callback);
 		});
 	}
-	
+
 	//scans all directories until a match is found
-	matchScan(path, torrent, torrentFiles, dirIndex){
+	matchScan(path, torrent, torrentFiles, dirIndex, asyncCallback){
 		var caller = this;
 		var scanPath = [];
 		for(var n = 0; n < torrentFiles.length; n++){
@@ -123,22 +123,24 @@ class BatchProcessor{
 		async.map(scanPath, fs.stat, function(err, results){
 			if(err) {
 				if(dirIndex < caller.directories.length -1){
-					caller.matchScan(path, torrent, torrentFiles, dirIndex + 1);
+					caller.matchScan(path, torrent, torrentFiles, dirIndex + 1, asyncCallback);
 				}else{
 					caller.scanningMatch --;
+					asyncCallback();
 				}
 			}
-			else{ 
-			torrent.match = caller.directories[dirIndex];
-			caller.scanningMatch --;
-			caller.emit("match", torrent);
+			else{
+				torrent.match = caller.directories[dirIndex];
+				caller.scanningMatch --;
+				asyncCallback();
+				caller.emit("match", torrent);
 			}
 			if(caller.scanningMatch === 0){
 				caller.emit("endMatch");
 			}
 		});
 	}
-	
+
 	//returns the files and file sizes of a torrent
 	getTorrentFiles(torrent){
 		var files = []
@@ -156,7 +158,7 @@ class BatchProcessor{
 		});
 		return files;
 	}
-	
+
 	readScan(path){
 		var caller = this;
 		fs.readdir(path, function(err, files){
@@ -168,31 +170,39 @@ class BatchProcessor{
 					if(stat.isDirectory()){
 						caller.readScan(path + file + "/");
 						caller.scanningTor --;
+						if(caller.scanningTor === 0){
+							caller.emit('endReadTorrents', caller.torrents);
+						}
 					}else if(stat.isFile()){
 						caller.readTorrent(path, file);
+					}else{
+						caller.scanningTor --;
 					}
 				});
 			});
 		});
 	}
-	
-	//need to check if file is torrent before reading
+
 	readTorrent(path, file){
 		var caller = this;
-		nt.read(path + file, function(err, torrent) {
-			if(err) { throw err }
-			torrent = {'path' : path, 'filename' : file, 'data' : torrent.metadata};
-			caller.torrents.push(torrent);
+		if(file.slice(-8) == ".torrent"){
+			nt.read(path + file, function(err, torrent) {
+				if(err) { throw err }
+				torrent = {'path' : path, 'filename' : file, 'data' : torrent.metadata};
+				caller.torrents.push(torrent);
+				caller.scanningTor --;
+				caller.emit('torrentRead', torrent);
+				if(caller.scanningTor === 0){
+					caller.emit('endReadTorrents', caller.torrents);
+				}
+			});
+		}else{
 			caller.scanningTor --;
-			caller.emit('torrentRead', torrent);
-			if(caller.scanningTor === 0){
-				caller.emit('endReadTorrents', caller.torrents);
-			}
-		});
+		}
 	}
-	
+
 	statusMessage(message){
-		
+
 	}
 
 	//Makes sure the path finishes with a trailing slash

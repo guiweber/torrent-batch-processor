@@ -36,6 +36,7 @@ exports.match = function(source, lookup, callback){
 		status(statusString, read + ' torrents read so far.');
 	});
 	batch.on('endReadTorrents', function(allTorrents){
+		status(statusString, 'finished reading torrents');
 		batch.actionMatch(lookup, allTorrents);
 	});
 	batch.on('endDir', function(count){
@@ -57,11 +58,10 @@ updates the onscreen status
 function status(title, progress){
 	progress = progress || '';
 	/*if (process.platform == 'win32'){
-		process.stdout.write('\x1Bc'); 
+		process.stdout.write('\x1Bc');
 	}else{
 		process.stdout.write('\x1B[2J'); //needs testing on linux
 	}
 	console.log(title);*/
 	console.log(progress);
-	
 }
