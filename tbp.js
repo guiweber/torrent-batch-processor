@@ -24,13 +24,13 @@ var batch = new exports.BatchProcessor();
 /*
 Creates the default folder for all torrents found in *source*. The folders are created under *dest*.
 */
-exports.createFolders = function(source, dest, callback){
+exports.createDefDirs = function(source, dest, callback){
 	batch.progressToggle(true);
 	batch.progressSetMessage('Creating default directory for torrents...');
 
 	batch.actionReadTorrents(source);
 	batch.on('torrentRead', function(torrent){
-		batch.actionMkDir(dest, torrent);
+		batch.actionMkDir(dest, true, torrent);
 	});
 	batch.on('endRead', function(allTorrents){
 		batch.progressToggle(false);
@@ -43,8 +43,6 @@ Scans *lookup* for files belonging to the torrents found in *source*
 */
 exports.match = function(source, lookup, callback){
 	batch.progressToggle(true);
-	batch.progressSetMessage('Finding matches...');
-
 	batch.actionReadTorrents(source);
 
 	batch.on('endRead', function(allTorrents){
@@ -53,6 +51,32 @@ exports.match = function(source, lookup, callback){
 
 	batch.on('endMatch', function(){
 		batch.progressToggle(false);
+		batch.printNoMatch();
+		callback(batch.torrents);
+	});
+};
+
+/*
+Scans *lookup* for files belonging to the torrents found in *source* and copies
+all files in the matching directory to another under *dest*.
+If *defDir* is true, the data is copied under the default torrent directory name,
+if false,the matching directory name is used.
+*/
+exports.copy = function(source, lookup, dest, defDir, callback){
+	batch.progressToggle(true);
+	batch.actionReadTorrents(source);
+
+	batch.on('endRead', function(allTorrents){
+		batch.actionMatch(lookup, allTorrents);
+	});
+
+	batch.on('endMatch', function(allTorrents){
+		batch.actionCopy(dest, defDir, allTorrents);
+	});
+
+	batch.on('endCopy', function(){
+		batch.progressToggle(false);
+		batch.printNoMatch();
 		callback(batch.torrents);
 	});
 };

@@ -11,7 +11,14 @@ Download from github, do npm install from the download folder to install the dep
 ### match(source, lookup, callback)
 Scans *lookup* for files belonging to the torrents found in *source*
 
-### createFolders(source, dest, callback)
+### copy(source, lookup, dest, defDir, callback)
+Scans *lookup* for files belonging to the torrents found in *source* and copies
+all files in the matching directory to another under *dest*.
+
+If *defDir* is true, the data is copied under the default torrent directory name, 
+if false,the matching directory name is used.
+
+### createDefDirs(source, dest, callback)
 Creates the default folder for all torrents found in *source*. The folders are created under *dest*.
 
 ## The torrent object

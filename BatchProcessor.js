@@ -22,6 +22,8 @@ var nt = require('nt');
 var async = require('async');
 var fs = require('fs');
 var util = require('util');
+var ncp = require('ncp').ncp;
+ncp.limit = 2;
 const EventEmitter = require('events');
 
 /* ==BatchProcessor Class==
@@ -45,12 +47,15 @@ class BatchProcessor{
 		this.scanningDir =  0;
 		this.scanningMatch = 0;
 		this.scanningTor = 0;
+		this.copying = 0;
 		this.progress = [];
 		this.progress['read'] = 0;
 		this.progress['match'] = 0;
+		this.progress['copy'] = 0;
 		this.progress['mkDir'] = 0;
 		this.progress['mkDirExists'] = 0;
 		this.progress['messages'] = [];
+		this.progress['errors'] = [];
 		this.torrents = [];
 		this.lookupDirs = [];
 
@@ -59,7 +64,7 @@ class BatchProcessor{
 		});
 
 		this.on('endRead', function(){
-			this.progressSetMessage('Finished reading torrents');
+			this.progressSetMessage('Finished reading torrents!');
 		});
 
 		this.on('lookupDirsReady', function(){
@@ -72,7 +77,7 @@ class BatchProcessor{
 		});
 
 		this.on('endMatch', function(){
-			this.progressSetMessage('Match scan done!');
+			this.progressSetMessage('Finished scanning directories for torrent data!');
 		});
 
 		this.on('mkDir', function(){
@@ -81,6 +86,14 @@ class BatchProcessor{
 
 		this.on('mkDirExists', function(){
 			this.progress['mkDirExists'] ++;
+		});
+
+		this.on('torrentCopy', function(){
+			this.progress['copy'] ++;
+		});
+
+		this.on('endCopy', function(){
+			this.progressSetMessage('Finished copying torrent data!');
 		});
 	}
 
@@ -97,18 +110,60 @@ class BatchProcessor{
 		this.getDirectories(path, function(){self.startMatchScan(path, torrents);});
 	}
 
-	actionMkDir(root, torrents){
+	actionCopy(dest, defDir, torrents){
+		if(!defDir){
+			this.progress['errors'].push('defDir = false currently not supported, aborting');
+			return;
+		}
+		var self = this;
+		dest = this.cleanPath(dest);
+		this.progressSetMessage('Copying data, this may take some time...');
+		this.actionMkDir(dest, defDir, torrents);
+		torrents.forEach(function(torrent){
+			if (typeof torrent.match != 'undefined' && torrent.match != ''){
+				self.copying ++;
+				if(defDir){
+					var destination = dest + torrent.data.info.name;
+				}else{
+					var destination = dest + torrent.match;
+				}
+				ncp(torrent.match, destination, function (err) {
+					self.copying --;
+					if(err) {
+						return self.progress['errors'].push(err);
+					}else{
+						self.emit('torrentCopy', torrent);
+						if(self.copying == 0){
+							self.emit('endCopy', self.torrents);
+						}
+					}
+				});
+			}
+		});
+	}
+
+	actionMkDir(root, defDir, torrents){
+		if(!defDir){
+			this.progress['errors'].push('defDir = false currently not supported, aborting');
+			return;
+		}
 		var self = this;
 		var root = this.cleanPath(root);
 		var torrents = this.getArray(torrents);
 		torrents.forEach(function(torrent){
-			try {
-				var path = root + torrent.data.info.name;
-				fs.mkdirSync(path);
-				this.emit('mkDir', path);
-			} catch(e) {
-				if( e.code != 'EEXIST' ){ throw e; }
-				else{ self.emit('mkDirExists', path); }
+			if(defDir || (typeof torrent.match != 'undefined' && torrent.match != '')){
+				if(defDir){
+					var path = root + torrent.data.info.name;
+				}else{
+					var path = root + torrent.match;
+				}
+				try {
+					fs.mkdirSync(path);
+					self.emit('mkDir', path);
+				} catch(e) {
+					if( e.code != 'EEXIST' ){ throw e; }
+					else{ self.emit('mkDirExists', path); }
+				}
 			}
 		});
 	}
@@ -153,6 +208,7 @@ class BatchProcessor{
 	//initializes the scan process for each torrent
 	startMatchScan(path, torrents){
 		var self = this;
+		this.progressSetMessage('Finding matches...');
 		async.eachLimit(torrents, 16, function(torrent, callback){ //16 concurrent scans gives the best performance on my pc
 			self.scanningMatch ++;
 			torrent.match = '';
@@ -184,7 +240,7 @@ class BatchProcessor{
 				self.emit("match", torrent);
 			}
 			if(self.scanningMatch === 0){
-				self.emit("endMatch");
+				self.emit("endMatch", self.torrents);
 			}
 		});
 	}
@@ -274,12 +330,28 @@ class BatchProcessor{
 		console.log(this.progress['read'] + ' torrents read');
 		console.log(this.progress['match'] + "/" + this.torrents.length + ' matches found');
 		console.log(this.progress['mkDir'] + ' folders created, ' + this.progress['mkDirExists'] + ' already existing');
+		console.log(this.progress['copy'] + "/" + this.progress['match'] + ' torrents copied');
+		console.log(this.copying + ' torrents in queue for copy');
 		console.log('');
 
 		this.progress['messages'].forEach(function(message){
 			console.log(message);
 		});
 
+		console.log('');
+		this.progress['errors'].forEach(function(message){
+			console.log("error: " + message);
+		});
+
+	}
+
+	//prints the torrents for which no matches have been found
+	printNoMatch(){
+		this.torrents.forEach((torrent) => {
+			if(typeof torrent.match == 'undefined' || torrent.match == ''){
+				console.log('No match for ' + torrent.data.info.name);
+			}
+		})
 	}
 
 	//Makes sure the path finishes with a trailing slash
